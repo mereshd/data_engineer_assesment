@@ -1,0 +1,35 @@
+{
+  "source": "jira",
+  "project": "ACME",
+  "issues": [
+    {
+      "key": "ACME-101",
+      "issue_type": "Bug",
+      "status": "In Progress",
+      "summary": "BetaHealth onboarding import failing",
+      "description": "Sarah Chen reported that the import job failed after uploading the vendor extract.",
+      "assignee": "John Miller",
+      "reporter": "Sarah Chen",
+      "comments": [
+        {
+          "author": "John Miller",
+          "body": "I can reproduce this locally. It seems tied to the file from sarah@betahealth.io."
+        },
+        {
+          "author": "Mark Davis",
+          "body": "Please check whether the BetaHealth account has the right permissions."
+        }
+      ]
+    },
+    {
+      "key": "ACME-102",
+      "issue_type": "Task",
+      "status": "To Do",
+      "summary": "Add audit trail for processed files",
+      "description": "We need to record input hashes, output hashes, and failure reasons for reviewer trust.",
+      "assignee": "Mark Davis",
+      "reporter": "John Miller",
+      "comments": []
+    }
+  ]
+}

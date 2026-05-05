@@ -1,0 +1,7 @@
+[
+  {
+    "source": "slack",
+    "user": "john@acme.com",
+    "text": "This file is intentionally malformed"
+
+]

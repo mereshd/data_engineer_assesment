@@ -1,0 +1,5 @@
+PLACEHOLDER XLSX FILE
+
+This is intentionally not a real Excel workbook. The sanitizer pipeline
+does not process .xlsx files in v1; it should record this file in the
+manifest with status "skipped_unsupported".

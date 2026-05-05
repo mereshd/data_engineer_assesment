@@ -1,0 +1,5 @@
+message_id,from,to,subject,body,sent_at
+eml_001,john@acme.com,sarah@betahealth.io,Follow up on onboarding,"Hi Sarah, thanks for speaking with me. Mark said BetaHealth is ready to review the draft contract.",2026-05-01T14:10:00Z
+eml_002,sarah@betahealth.io,john@acme.com,Re: Follow up on onboarding,"Thanks John. Please send the files to my assistant Daniel at daniel@betahealth.io.",2026-05-01T14:25:00Z
+eml_003,mark@betahealth.io,john@acme.com,Contract questions,"John, can you confirm whether Acme Inc. will support the migration next week?",2026-05-01T15:00:00Z
+eml_004,vendor.support@externalpartner.com,john@acme.com,External vendor onboarding,"Hi John, please reach our escalation desk at +1-415-555-0142 to coordinate next week.",2026-05-02T09:00:00Z

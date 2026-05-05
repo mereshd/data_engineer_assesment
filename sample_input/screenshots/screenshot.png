@@ -1,0 +1,5 @@
+PLACEHOLDER PNG FILE
+
+This is intentionally not a real PNG. The sanitizer pipeline does not
+process .png files in v1; it should record this file in the manifest
+with status "skipped_unsupported".

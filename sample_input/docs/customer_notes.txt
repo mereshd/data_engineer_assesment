@@ -1,0 +1,7 @@
+Customer note:
+
+John Miller spoke with Sarah Chen from BetaHealth about the data export.
+
+Sarah mentioned that Daniel Lee may send over additional files from daniel@betahealth.io.
+
+The migration is expected to involve Acme Inc., BetaHealth, and several internal users.

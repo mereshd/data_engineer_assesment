@@ -1,0 +1,16 @@
+[
+  {
+    "source": "slack",
+    "channel": "general",
+    "user": "john@acme.com",
+    "text": "Hey Sarah, I spoke with Mark from BetaHealth. He said we should send the onboarding packet to sarah@betahealth.io.",
+    "timestamp": "2026-05-01T10:05:00Z"
+  },
+  {
+    "source": "slack",
+    "channel": "general",
+    "user": "sarah@betahealth.io",
+    "text": "Thanks John. Please call me at +1-212-555-0199 if anything is missing.",
+    "timestamp": "2026-05-01T10:07:00Z"
+  }
+]
