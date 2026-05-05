@@ -1,0 +1,48 @@
+{
+  "persons": [
+    {
+      "canonical_id": "PERSON_001",
+      "aliases": ["John Miller", "John"],
+      "emails": [
+        { "value": "john@acme.com", "token": "EMAIL_001" }
+      ],
+      "phones": []
+    },
+    {
+      "canonical_id": "PERSON_002",
+      "aliases": ["Sarah Chen", "Sarah"],
+      "emails": [
+        { "value": "sarah@betahealth.io", "token": "EMAIL_002" }
+      ],
+      "phones": [
+        { "value": "+1-212-555-0199", "token": "PHONE_001" }
+      ]
+    },
+    {
+      "canonical_id": "PERSON_003",
+      "aliases": ["Mark Davis", "Mark"],
+      "emails": [
+        { "value": "mark@betahealth.io", "token": "EMAIL_003" }
+      ],
+      "phones": []
+    },
+    {
+      "canonical_id": "PERSON_004",
+      "aliases": ["Daniel Lee", "Daniel"],
+      "emails": [
+        { "value": "daniel@betahealth.io", "token": "EMAIL_004" }
+      ],
+      "phones": []
+    }
+  ],
+  "organizations": [
+    {
+      "canonical_id": "ORG_001",
+      "aliases": ["BetaHealth"]
+    },
+    {
+      "canonical_id": "ORG_002",
+      "aliases": ["Acme Inc.", "Acme"]
+    }
+  ]
+}
