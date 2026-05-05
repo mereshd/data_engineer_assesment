@@ -1,4 +1,4 @@
-# Local Enterprise Data Sanitization Pipeline
+# Local Data Sanitization Pipeline
 
 A deterministic, dependency-free Python pipeline that walks a folder of
 exported enterprise data, applies a config-driven de-identification pass
@@ -54,12 +54,14 @@ Run 20260505_041206: 5 processed / 4 skipped / 1 failed / 0 empty / 4 unmapped r
 
 CLI flags:
 
+
 | flag        | required | description                                               |
 | ----------- | -------- | --------------------------------------------------------- |
 | `--input`   | yes      | folder to walk recursively                                |
 | `--output`  | yes      | folder to write `sanitized/` and `reports/` into          |
 | `--config`  | no       | path to entities config (default: `config/entities.json`) |
-| `--verbose` | no       | print one line per file outcome + run-boundary events    |
+| `--verbose` | no       | print one line per file outcome + run-boundary events     |
+
 
 ## How it works
 
@@ -88,31 +90,35 @@ flowchart LR
     validator --> validation[(validation_report.json)]
 ```
 
+
+
 In words:
 
 1. **Walk** the input folder recursively in deterministic, sorted order.
 2. **Classify** each file by extension. Unsupported extensions are
-   recorded but never opened.
+  recorded but never opened.
 3. **Process** supported files through a per-extension processor inside
-   `try/except`, so one bad file never aborts the run.
+  `try/except`, so one bad file never aborts the run.
 4. **De-identify** each string with a three-phase pass: scan the original
-   text for matches, do the cascading replacement, then re-render
+  text for matches, do the cascading replacement, then re-render
    snippets against the fully sanitized text.
 5. **Write** sanitized outputs into `<output>/sanitized/`, mirroring the
-   input layout.
+  input layout.
 6. **Emit** five reports under `<output>/reports/` so a reviewer can
-   audit the run from those alone.
+  audit the run from those alone.
 
 The pipeline is entry-pointed via `python -m sanitizer` (argparse +
 exit codes; see [Run status and exit codes](#run-status-and-exit-codes)).
 
 ## Supported file types
 
+
 | extension     | reader           | writer                        | notes                                                                 |
 | ------------- | ---------------- | ----------------------------- | --------------------------------------------------------------------- |
 | `.txt`, `.md` | UTF-8 text       | UTF-8 text                    | sanitize the whole document                                           |
 | `.json`       | `json.load`      | pretty `json.dumps(indent=2)` | recursively sanitize string *values*; numbers/bools/null pass through |
 | `.csv`        | `csv.DictReader` | `csv.DictWriter`              | sanitize cell *values*; headers preserved verbatim                    |
+
 
 Anything else is recorded as `skipped_unsupported` in the manifest. The
 pipeline never opens or attempts to parse an unsupported file's bytes.
@@ -152,13 +158,13 @@ also get a row). Every line carries:
 - `status` (`processed` / `skipped_unsupported` / `failed` / `empty`)
 - `input_sha256` (always set if the file was readable)
 - `output_sha256` and `output_path` (set when an output file exists,
-  including for `empty` files which have a 0-byte output and the
-  SHA-256 of `b""`)
+including for `empty` files which have a 0-byte output and the
+SHA-256 of `b""`)
 - `records_processed` (rows for CSV, top-level array length for JSON,
-  1 for text/markdown)
+1 for text/markdown)
 - `replacements` (counts of mapped values per category)
 - `unmapped` (`{emails, phones}` counts of matches that hit the
-  placeholder fallback and were routed to the quarantine report)
+placeholder fallback and were routed to the quarantine report)
 - `error` (string if `status == "failed"`, otherwise `null`)
 
 ### `validation_report.json`
@@ -169,13 +175,13 @@ the manifest is the input the validator audits, not just an in-memory
 view.
 
 1. `no_raw_emails_in_sanitized_outputs` — re-scans every file under
-   `sanitized/` for raw email patterns.
+  `sanitized/` for raw email patterns.
 2. `no_raw_phone_numbers_in_sanitized_outputs` — same, for phones.
 3. `processed_files_have_outputs` — every manifest row with
-   `status == processed` has an `output_path`, an `output_sha256`, and
+  `status == processed` has an `output_path`, an `output_sha256`, and
    the file actually exists on disk.
 4. `all_input_files_accounted_for` — every file under the input root
-   appears exactly once in the manifest (catches both missing and
+  appears exactly once in the manifest (catches both missing and
    duplicated rows).
 
 ### `pii_transformations.csv` and `pii_quarantine.csv`
@@ -193,6 +199,7 @@ file,kind,value,value_hash,token,status,location,snippet
 
 Column reference:
 
+
 | column       | description                                                                                                                                                                                          |
 | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `file`       | input file relative path (POSIX)                                                                                                                                                                     |
@@ -207,18 +214,19 @@ Column reference:
 |              | - CSV: `row N, column "X"` (1-indexed data rows; header is row 0)                                                                                                                                    |
 | `snippet`    | ~60 chars context on each side, **rendered against the fully sanitized text** so the value appears as its token / placeholder and any neighbouring PII is already tokenized. Safe to log on its own. |
 
+
 CSV quoting follows RFC 4180 (`csv.QUOTE_MINIMAL`): cells containing
 commas or double-quotes get wrapped in double-quotes; embedded
 double-quotes are escaped by doubling (so a `location` like
 `row 4, column "from"` is written as `"row 4, column ""from"""`).
 
-**`pii_transformations.csv`** contains the rows where `status == mapped` —
+`**pii_transformations.csv`** contains the rows where `status == mapped` —
 the row-level audit log of every successful PII transformation across
 emails, phones, person aliases, and org aliases. This is what a reviewer
 uses to verify "every replacement we made was the one we intended" and a
 data engineer uses to compute redaction density per source.
 
-**`pii_quarantine.csv`** contains the rows where `status == unmapped` —
+`**pii_quarantine.csv**` contains the rows where `status == unmapped` —
 matches that hit the regex but had no entry in the config. The triage
 loop is straightforward: open the file, look at `value` and `snippet`,
 decide whether to add the value to `config/entities.json`, re-run; the
@@ -251,15 +259,14 @@ about. Worked examples:
 **Why emails first.** Take the input string `Mail goes to sarah@betahealth.io next week`:
 
 - *Wrong order* (orgs first): the `BetaHealth` alias matches at offset
-  20, replaces in place, producing `Mail goes to sarah@ORG_001.io next
-  week`. The email regex now scans this corrupted string, sees no
-  valid email, leaves the half-tokenized fragment in the output.
-  `sarah` and `.io` leak.
+20, replaces in place, producing `Mail goes to sarah@ORG_001.io next week`. The email regex now scans this corrupted string, sees no
+valid email, leaves the half-tokenized fragment in the output.
+`sarah` and `.io` leak.
 - *Correct order* (emails first): `EMAIL_RE` matches the whole
-  `sarah@betahealth.io` substring as one unit and replaces with
-  `EMAIL_002`, producing `Mail goes to EMAIL_002 next week`. The org
-  pass then runs and finds nothing to do — `BetaHealth` no longer
-  exists in the text. The email is fully replaced; no leakage.
+`sarah@betahealth.io` substring as one unit and replaces with
+`EMAIL_002`, producing `Mail goes to EMAIL_002 next week`. The org
+pass then runs and finds nothing to do — `BetaHealth` no longer
+exists in the text. The email is fully replaced; no leakage.
 
 **Why phones before names/orgs.** Configured aliases are mostly
 letters, but if any alias contained digits (a product name like
@@ -274,13 +281,13 @@ broader alias regexes run prevents any cross-talk.
 `[{aliases: ["Sarah Chen", "Sarah"]}, ...]`:
 
 - *Without longest-first*: the `Sarah` alias runs first and matches
-  twice — at position 0 (in `Sarah Chen`) and at position 19. Result:
-  `PERSON_002 Chen and PERSON_002 are the same person.` — a stray
-  `Chen` is left behind because we ate `Sarah` mid-name.
+twice — at position 0 (in `Sarah Chen`) and at position 19. Result:
+`PERSON_002 Chen and PERSON_002 are the same person.` — a stray
+`Chen` is left behind because we ate `Sarah` mid-name.
 - *With longest-first*: `Sarah Chen` runs first and matches at
-  position 0, becoming `PERSON_002`. The shorter `Sarah` then
-  matches only the standalone occurrence at position 19. Result:
-  `PERSON_002 and PERSON_002 are the same person.` — clean.
+position 0, becoming `PERSON_002`. The shorter `Sarah` then
+matches only the standalone occurrence at position 19. Result:
+`PERSON_002 and PERSON_002 are the same person.` — clean.
 
 Same logic for orgs: `Acme Inc.` runs before `Acme` so a sentence
 like `Met with Acme Inc. yesterday` doesn't become
@@ -296,15 +303,15 @@ The reason is `Acme Inc.` — an alias that *ends in a non-word character*
 (the `.`).
 
 - `\b` is defined as a transition between a word char (`[A-Za-z0-9_]`)
-  and a non-word char. In `Acme Inc. is the parent`, the position
-  *after* the `.` is a transition between two non-word chars (`.` and
-  space). That's not a word boundary, so a `\b`-anchored regex
-  `\bAcme Inc.\b` may or may not match depending on what follows;
-  the behaviour is fragile and engine-dependent.
+and a non-word char. In `Acme Inc. is the parent`, the position
+*after* the `.` is a transition between two non-word chars (`.` and
+space). That's not a word boundary, so a `\b`-anchored regex
+`\bAcme Inc.\b` may or may not match depending on what follows;
+the behaviour is fragile and engine-dependent.
 - `(?<!\w)Acme Inc\.(?!\w)` says explicitly: "the char before the
-  match is not a word char (or it's start-of-string), and the char
-  after isn't a word char either." Works at any position in the
-  string regardless of trailing punctuation.
+match is not a word char (or it's start-of-string), and the char
+after isn't a word char either." Works at any position in the
+string regardless of trailing punctuation.
 
 This is also why the email regex still uses `\b` — emails always
 start and end with word chars, so `\b` is well-defined for them.
@@ -326,26 +333,26 @@ flowchart TB
     snippet --> output[("(sanitized_string, counts, findings)<br/>findings now have safe snippets")]
 ```
 
+
+
 **Phase 1 — Scan the original text once for every transformation.**
 `DeIdentifier._scan_all_findings(text)` runs `EMAIL_RE.finditer`,
 `PHONE_RE.finditer`, then iterates compiled person/org alias
 patterns in longest-first order. For each match it produces a
-`Finding(kind, value, value_hash, token, status, start_offset,
-end_offset)` with offsets *in the original text*. Higher-priority
+`Finding(kind, value, value_hash, token, status, start_offset, end_offset)` with offsets *in the original text*. Higher-priority
 matches register their `(start, end)` span in a `covered` list, and
 later matches that fall inside an already-covered span are dropped.
 That's how:
 
 - a phone-shaped substring inside an email match (e.g. the digits in
-  `+1-212-555-0199@example.com`) gets credited to the email match
-  alone — the email span covers the whole address, the phone match
-  inside it is dropped;
-- the shorter `Sarah` alias is dropped at offset 0 of `Sarah Chen
-  and Sarah …` because `Sarah Chen` (longer, scanned first) already
-  covers (0, 10);
+`+1-212-555-0199@example.com`) gets credited to the email match
+alone — the email span covers the whole address, the phone match
+inside it is dropped;
+- the shorter `Sarah` alias is dropped at offset 0 of `Sarah Chen and Sarah …` because `Sarah Chen` (longer, scanned first) already
+covers (0, 10);
 - a person alias and a same-text org alias don't both fire — persons
-  are scanned first, orgs second, with the unified `covered` list
-  preventing double-counting.
+are scanned first, orgs second, with the unified `covered` list
+preventing double-counting.
 
 The reason this phase is separate is offset honesty: positions in
 the *original* text are stable, so the line/column or JSON-path or
@@ -416,25 +423,17 @@ in `pii_quarantine.csv` with `value`, `value_hash`, `location`, and
 sanitized `snippet`. Concretely the triage loop looks like:
 
 1. Operator opens `pii_quarantine.csv`. Sorts by `value_hash` (groups
-   the same unknown value across files).
+  the same unknown value across files).
 2. Sees a row like:
-   ```
+  ```
    docs/onboarding_notes.md, email, vendor.support@externalpartner.com,
    aedb8969, <UNMAPPED_EMAIL>, unmapped, "line 9, column 36",
    "...External vendor not yet onboarded: <UNMAPPED_EMAIL> ..."
-   ```
+  ```
 3. Decides the vendor is real and worth tracking. Adds an entry to
-   `config/entities.json`:
-   ```json
-   {
-     "canonical_id": "PERSON_005",
-     "aliases": ["Vendor Support"],
-     "emails": [{"value": "vendor.support@externalpartner.com", "token": "EMAIL_005"}],
-     "phones": []
-   }
-   ```
+  `config/entities.json`:
 4. Re-runs the pipeline. The same finding now lands in
-   `pii_transformations.csv` with `status=mapped, token=EMAIL_005`.
+  `pii_transformations.csv` with `status=mapped, token=EMAIL_005`.
    Cross-document dedup means **all N occurrences** of that vendor —
    in markdown, CSV, JSON, anywhere — get fixed by that one config
    change.
@@ -552,20 +551,22 @@ and unmapped reports.
 
 `run_status` in `run_summary.json` is one of:
 
-| status                     | meaning                                                                                                                              |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `completed`                | every input was processed successfully; no unsupported, failed, empty, or unmapped findings                                          |
-| `completed_with_warnings`  | the pipeline finished but produced at least one of: skipped unsupported file, failed file, empty file, or unmapped PII finding       |
-| `failed`                   | catastrophic, before any reports could be produced (e.g. input folder doesn't exist, config unreadable). Reserved for top-level CLI handling |
+
+| status                    | meaning                                                                                                                                      |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `completed`               | every input was processed successfully; no unsupported, failed, empty, or unmapped findings                                                  |
+| `completed_with_warnings` | the pipeline finished but produced at least one of: skipped unsupported file, failed file, empty file, or unmapped PII finding               |
+| `failed`                  | catastrophic, before any reports could be produced (e.g. input folder doesn't exist, config unreadable). Reserved for top-level CLI handling |
+
 
 CLI exit codes map onto this:
 
-- **`0`** — `run_status == completed` AND validation passed.
-- **`2`** — `completed_with_warnings`, OR validation found a leak. The
-  run finished and produced full reports; a human (or CI) should look at
-  them.
-- **`1`** — catastrophic failure (`failed` status, or before the
-  pipeline could even start).
+- `**0`** — `run_status == completed` AND validation passed.
+- `**2**` — `completed_with_warnings`, OR validation found a leak. The
+run finished and produced full reports; a human (or CI) should look at
+them.
+- `**1**` — catastrophic failure (`failed` status, or before the
+pipeline could even start).
 
 ## Determinism and reproducibility
 
@@ -573,15 +574,15 @@ Determinism is a foundational property here, not a nice-to-have. Three
 concrete consumers depend on it:
 
 - **A reviewer auditing the run** can re-run the pipeline themselves
-  and get exactly the same sanitized output, byte for byte. If the
-  output drifts run-to-run, the reviewer can no longer reason about
-  whether a difference is "expected vs broken."
+and get exactly the same sanitized output, byte for byte. If the
+output drifts run-to-run, the reviewer can no longer reason about
+whether a difference is "expected vs broken."
 - **CI / regression detection.** A diff against a prior run's
-  artifacts is the cheapest possible regression signal — but only if
-  the artifacts are stable absent code changes.
+artifacts is the cheapest possible regression signal — but only if
+the artifacts are stable absent code changes.
 - **Replays during incident response.** "Why did this PII leak through
-  on Tuesday?" is answerable only if Tuesday's run is reproducible
-  from the same input + config + code commit.
+on Tuesday?" is answerable only if Tuesday's run is reproducible
+from the same input + config + code commit.
 
 Five things combine to make the sanitized output tree byte-identical
 across runs on the same input + config.
@@ -640,8 +641,7 @@ content of each file pair.
 ### 4. Stable column order and writers
 
 The PII CSVs use a **fixed, hard-coded column order** —
-`PII_FIELDNAMES = ["file", "kind", "value", "value_hash", "token",
-"status", "location", "snippet"]` — passed into `csv.DictWriter`
+`PII_FIELDNAMES = ["file", "kind", "value", "value_hash", "token", "status", "location", "snippet"]` — passed into `csv.DictWriter`
 explicitly. Rows are written in document order, file by file (the
 processor walks each file's matches in left-to-right offset order
 inside the de-identifier's Phase 1 scan). The CSV writer is
@@ -684,20 +684,22 @@ to a single byte.
 
 ## Edge cases handled
 
-| case                                   | behavior                                                                                                              |
-| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| nested directories                     | recursed in deterministic, sorted order                                                                               |
-| unsupported extensions                 | recorded as `skipped_unsupported`, never read                                                                         |
-| 0-byte files                           | recorded as `empty`, 0-byte output mirrored at the same relative path                                                 |
-| malformed JSON                         | recorded as `failed` with the exception message; the rest of the run continues                                        |
-| malformed CSV / encoding errors        | same isolation — per-file `try/except`                                                                                |
-| repeated runs                          | sorted traversal + deterministic placeholders make sanitized files byte-identical across runs                         |
-| ISO date strings                       | the phone regex's word-boundary anchors keep it from matching dates like `2026-05-01T10:05:00Z`                       |
-| aliases inside other words             | `Mark` does not match inside `Marketing`                                                                              |
-| aliases ending in `.`                  | `Acme Inc.` matches at end-of-sentence and before whitespace                                                          |
-| unmapped emails / phones               | replaced with `<UNMAPPED_EMAIL>` / `<UNMAPPED_PHONE>` placeholders and routed to `pii_quarantine.csv` per occurrence  |
-| phone-shaped substring inside an email | the email match wins; the inner phone is not double-flagged                                                           |
+
+| case                                   | behavior                                                                                                             |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| nested directories                     | recursed in deterministic, sorted order                                                                              |
+| unsupported extensions                 | recorded as `skipped_unsupported`, never read                                                                        |
+| 0-byte files                           | recorded as `empty`, 0-byte output mirrored at the same relative path                                                |
+| malformed JSON                         | recorded as `failed` with the exception message; the rest of the run continues                                       |
+| malformed CSV / encoding errors        | same isolation — per-file `try/except`                                                                               |
+| repeated runs                          | sorted traversal + deterministic placeholders make sanitized files byte-identical across runs                        |
+| ISO date strings                       | the phone regex's word-boundary anchors keep it from matching dates like `2026-05-01T10:05:00Z`                      |
+| aliases inside other words             | `Mark` does not match inside `Marketing`                                                                             |
+| aliases ending in `.`                  | `Acme Inc.` matches at end-of-sentence and before whitespace                                                         |
+| unmapped emails / phones               | replaced with `<UNMAPPED_EMAIL>` / `<UNMAPPED_PHONE>` placeholders and routed to `pii_quarantine.csv` per occurrence |
+| phone-shaped substring inside an email | the email match wins; the inner phone is not double-flagged                                                          |
 | run summary vs manifest drift          | run summary totals are computed from the manifest; the validation report cross-checks both against the input tree    |
+
 
 ## Sample artifacts (from the included `sample_input/`)
 
@@ -845,19 +847,19 @@ email/inbox.csv,phone,+14155550142,abbf04d6,<UNMAPPED_PHONE>,unmapped,"row 4, co
 Four properties to notice across both files:
 
 1. **Same schema, both files.** Same eight columns. The only thing that
-   distinguishes a transformation from a quarantine row is `status`
+  distinguishes a transformation from a quarantine row is `status`
    (and which file it's in).
 2. **Location format adapts per processor.** `line N, column M` for
-   markdown / text, `row N, column "X"` for CSV, `$.path[i].field`
+  markdown / text, `row N, column "X"` for CSV, `$.path[i].field`
    for JSON. The schema stays uniform; the format string is
    processor-aware.
 3. **Cross-document dedup works.** The same vendor email gets
-   `value_hash: "aedb8969"` in both the markdown and the CSV finding;
+  `value_hash: "aedb8969"` in both the markdown and the CSV finding;
    same `"abbf04d6"` for the phone. An operator triaging
    `pii_quarantine.csv` sorts by hash and resolves "this same vendor
    in N files" with a single config entry.
 4. **Snippets are privacy-clean.** Each finding's snippet is rendered
-   from the fully sanitized text, so the focal value is the token /
+  from the fully sanitized text, so the focal value is the token /
    placeholder, and any other PII in the surrounding window already
    shows as a token (`PERSON_001`, `PERSON_002`, `PERSON_003`, ...).
    CSV snippets are naturally scoped to the single cell, which is why
@@ -909,112 +911,109 @@ Vendor escalation line: <UNMAPPED_PHONE>
 ## Design decisions
 
 - **Stdlib only at runtime.** Every dependency is a future support
-  burden, and this code is meant to be auditable line-by-line. The
-  six modules used — `re`, `json`, `csv`, `hashlib`, `argparse`,
-  `pathlib` — are all part of Python's standard library, no
-  `pip install` needed. (Worth being explicit: `re` is the stdlib
-  regex module shipped with Python; the third-party PyPI package
-  `regex` — different name — has more features but isn't used here.)
-  The only non-stdlib dependency is `pytest`, and it's *dev-only*.
+burden, and this code is meant to be auditable line-by-line. The
+six modules used — `re`, `json`, `csv`, `hashlib`, `argparse`,
+`pathlib` — are all part of Python's standard library, no
+`pip install` needed. (Worth being explicit: `re` is the stdlib
+regex module shipped with Python; the third-party PyPI package
+`regex` — different name — has more features but isn't used here.)
+The only non-stdlib dependency is `pytest`, and it's *dev-only*.
 - **Source layout (`src/sanitizer/...`).** Prevents accidentally
-  importing the working tree instead of the installed package; makes
-  `python -m sanitizer` the canonical entry point.
+importing the working tree instead of the installed package; makes
+`python -m sanitizer` the canonical entry point.
 - **Per-file failure isolation.** A processor exception is caught at
-  the pipeline level and converted to a manifest row with status
-  `failed` and a serialized error. Nothing else aborts.
+the pipeline level and converted to a manifest row with status
+`failed` and a serialized error. Nothing else aborts.
 - **Deterministic traversal.** `os.walk` doesn't sort by default —
-  filesystem iteration order is implementation-defined and varies
-  between ext4 / NTFS / APFS, and even between runs on the same
-  filesystem after add/delete operations. `iter_input_files` calls
-  `dirnames.sort()` (in-place, so `os.walk` itself descends in sorted
-  order) and `sorted(filenames)` at every level, which makes file
-  order identical across operating systems and across repeated runs.
-  See [Determinism and reproducibility](#determinism-and-reproducibility)
-  for the full mechanics.
+filesystem iteration order is implementation-defined and varies
+between ext4 / NTFS / APFS, and even between runs on the same
+filesystem after add/delete operations. `iter_input_files` calls
+`dirnames.sort()` (in-place, so `os.walk` itself descends in sorted
+order) and `sorted(filenames)` at every level, which makes file
+order identical across operating systems and across repeated runs.
+See [Determinism and reproducibility](#determinism-and-reproducibility)
+for the full mechanics.
 - **Unmapped values get a placeholder, not a pseudonym.** Anything
-  the regex catches but the config doesn't know about becomes
-  `<UNMAPPED_EMAIL>` / `<UNMAPPED_PHONE>` and is routed to
-  `pii_quarantine.csv` with location and snippet. The placeholder
-  approach is a deliberate workflow choice: an auto-pseudonym like
-  `EMAIL_AUTO_a3f9b21c` would make the unreviewed state visually
-  indistinguishable from a properly mapped `EMAIL_001` — bad signal
-  to a reader, bad audit trail. The placeholder makes "this needs
-  review" obvious in the sanitized text *and* gives the operator a
-  CSV row to act on. See
-  [Unmapped values and the operator triage loop](#unmapped-values-and-the-operator-triage-loop)
-  for the full triage workflow.
+the regex catches but the config doesn't know about becomes
+`<UNMAPPED_EMAIL>` / `<UNMAPPED_PHONE>` and is routed to
+`pii_quarantine.csv` with location and snippet. The placeholder
+approach is a deliberate workflow choice: an auto-pseudonym like
+`EMAIL_AUTO_a3f9b21c` would make the unreviewed state visually
+indistinguishable from a properly mapped `EMAIL_001` — bad signal
+to a reader, bad audit trail. The placeholder makes "this needs
+review" obvious in the sanitized text *and* gives the operator a
+CSV row to act on. See
+[Unmapped values and the operator triage loop](#unmapped-values-and-the-operator-triage-loop)
+for the full triage workflow.
 - **Two row-level PII reports, same schema.** Mapped replacements go to
-  `pii_transformations.csv`; unmapped values go to
-  `pii_quarantine.csv`. Sharing the schema (with `status` as the only
-  semantic difference) means tooling can union them with a single
-  parser, and a row that was unmapped in one run becomes a mapped row
-  in the next without any consumer having to relearn the format.
+`pii_transformations.csv`; unmapped values go to
+`pii_quarantine.csv`. Sharing the schema (with `status` as the only
+semantic difference) means tooling can union them with a single
+parser, and a row that was unmapped in one run becomes a mapped row
+in the next without any consumer having to relearn the format.
 - **Three-phase de-id (scan → replace → snippet).** Match offsets
-  are captured against the original text (so line numbers point at
-  input files, not at some intermediate post-replacement string).
-  Replacement runs in cascading order. Snippets are then rendered
-  against the fully sanitized text so they never carry raw PII from
-  neighbouring matches. This split is what fixes both the off-by-N
-  line-number bug a fused scan/replace would have *and* the privacy
-  bug where one finding's snippet leaks another's raw value. See
-  [Three-phase apply()](#three-phase-apply) for the full mechanics.
+are captured against the original text (so line numbers point at
+input files, not at some intermediate post-replacement string).
+Replacement runs in cascading order. Snippets are then rendered
+against the fully sanitized text so they never carry raw PII from
+neighbouring matches. This split is what fixes both the off-by-N
+line-number bug a fused scan/replace would have *and* the privacy
+bug where one finding's snippet leaks another's raw value. See
+[Three-phase apply()](#three-phase-apply) for the full mechanics.
 - **Run summary totals are derived from the manifest, then validated.**
-  The manifest is the source of truth; the summary is a view of it;
-  validation re-checks both against the input tree. Nothing should
-  drift silently.
+The manifest is the source of truth; the summary is a view of it;
+validation re-checks both against the input tree. Nothing should
+drift silently.
 - **Validation is a separate module, not inline.** A reviewer can read
-  `validation.py` end-to-end in 60 seconds and convince themselves
-  that the four checks are real.
+`validation.py` end-to-end in 60 seconds and convince themselves
+that the four checks are real.
 - **CSV for flat reports, JSON for structured ones.** The two PII
-  reports have a strictly flat schema, so they're CSV. The manifest
-  has nested objects (`replacements`, `unmapped`), so it's JSONL.
-  Format follows shape, not the other way around.
+reports have a strictly flat schema, so they're CSV. The manifest
+has nested objects (`replacements`, `unmapped`), so it's JSONL.
+Format follows shape, not the other way around.
 
 ## Current limitations
 
 - **No NER, no coreference, no pronouns.** "She", "him", "the team"
-  are not resolved. Only the configured aliases and matched
-  email/phone patterns are replaced.
+are not resolved. Only the configured aliases and matched
+email/phone patterns are replaced.
 - **No PDF / image / spreadsheet processing.** The unsupported
-  placeholder files in `archives/`, `contracts/`, `screenshots/`,
-  and `spreadsheets/` exist precisely to demonstrate the supported
-  surface area.
+placeholder files in `archives/`, `contracts/`, `screenshots/`,
+and `spreadsheets/` exist precisely to demonstrate the supported
+surface area.
 - **Both PII reports carry raw values for triage.** That's
-  intentional — operators need to be able to act on findings — but in
-  a hardened deployment both `pii_transformations.csv` and
-  `pii_quarantine.csv` would live behind stricter access controls
-  than the rest of the artifacts (manifest, summary, sanitized
-  outputs), which intentionally do not contain raw PII.
-- **`value_hash` is a plain SHA-256 prefix, not HMAC.** It's
-  computed as `sha256(value)[:8]`. SHA-256 is a *pure* function:
-  given the input, anyone can compute the output. That's exactly
-  the property the operator workflow needs — the same vendor email
-  produces the same `value_hash` in every report, so triage groups
-  cleanly — but it's *not* a secret-grade pseudonym. An adversary
-  with the source can pre-compute "the hash of `evil@target.com` is
-  `7f31c2a8`," which lets them confirm whether that specific value
-  appears in the quarantine without ever seeing the raw `value`
-  field.
-
+intentional — operators need to be able to act on findings — but in
+a hardened deployment both `pii_transformations.csv` and
+`pii_quarantine.csv` would live behind stricter access controls
+than the rest of the artifacts (manifest, summary, sanitized
+outputs), which intentionally do not contain raw PII.
+- `**value_hash` is a plain SHA-256 prefix, not HMAC.** It's
+computed as `sha256(value)[:8]`. SHA-256 is a *pure* function:
+given the input, anyone can compute the output. That's exactly
+the property the operator workflow needs — the same vendor email
+produces the same `value_hash` in every report, so triage groups
+cleanly — but it's *not* a secret-grade pseudonym. An adversary
+with the source can pre-compute "the hash of `evil@target.com` is
+`7f31c2a8`," which lets them confirm whether that specific value
+appears in the quarantine without ever seeing the raw `value`
+field.
   HMAC fixes this: `HMAC-SHA256(secret_key, value)[:8]`. The hash
   becomes a *keyed* function — anyone can verify a hash given the
   key, but no one can pre-compute hashes without it. Combined with
   rotating the key periodically, even a leaked report from a prior
   rotation period can't be cross-referenced against current data.
-
   This is a swap-the-hash-call change in production: the secret
   lives in a secrets manager (AWS KMS, HashiCorp Vault, etc.), the
   pipeline reads it at startup, and `value_hash` becomes
   `hmac.new(key, value, "sha256").hexdigest()[:8]`. Everything else
   about the report shape stays the same.
 - **Validation is content-only.** It does not verify token uniqueness
-  across files, schema compliance, referential integrity, or
-  quarantine routing.
+across files, schema compliance, referential integrity, or
+quarantine routing.
 - **Single-process, in-memory per file.** Each file is opened, fully
-  read into memory, processed, and written. No worker pool, no
-  chunked / streaming reads. Three sub-cases of when this matters
-  and what to do about each:
-
+read into memory, processed, and written. No worker pool, no
+chunked / streaming reads. Three sub-cases of when this matters
+and what to do about each:
   *Many small files (e.g. a Slack export with 10K threads).* The
   workload is I/O- and decode-bound, not CPU-bound, so concurrency
   helps. Easiest path: a `concurrent.futures.ProcessPoolExecutor`
@@ -1026,53 +1025,52 @@ Vendor escalation line: <UNMAPPED_PHONE>
   the parent and aggregate exactly the same way the sequential
   loop does. The validator and report writers stay sequential —
   they're cheap.
-
   *Files larger than RAM (e.g. a 10GB log dump).* The current
   processors load whole files. Per file type:
   - `.txt` / `.md`: process in fixed-size chunks (say, 1 MiB) with
-    a small lookback buffer (say, 1 KiB) so a regex match spanning
-    a chunk boundary still fires. The de-identifier becomes a
-    streaming generator that yields sanitized chunks instead of
-    returning a whole sanitized string.
+  a small lookback buffer (say, 1 KiB) so a regex match spanning
+  a chunk boundary still fires. The de-identifier becomes a
+  streaming generator that yields sanitized chunks instead of
+  returning a whole sanitized string.
   - `.csv`: `csv.DictReader` already iterates row-by-row from the
-    underlying file handle, so this just needs the writer side to
-    be streaming too — already done. Large CSVs work today
-    *modulo* the in-memory `csv.DictWriter` buffer; switch to
-    flushing periodically.
+  underlying file handle, so this just needs the writer side to
+  be streaming too — already done. Large CSVs work today
+  *modulo* the in-memory `csv.DictWriter` buffer; switch to
+  flushing periodically.
   - `.json`: hardest. Standard `json.load` is not streaming. Two
-    options: (a) use `ijson` (a third-party SAX-style parser) and
-    rebuild the document incrementally — adds a dependency; or
-    (b) refuse JSON files above a configurable size threshold and
-    log a quarantine row for the file itself.
-
+  options: (a) use `ijson` (a third-party SAX-style parser) and
+  rebuild the document incrementally — adds a dependency; or
+  (b) refuse JSON files above a configurable size threshold and
+  log a quarantine row for the file itself.
   *Streaming + concurrency together.* Each worker can stream its
   own file independently — the two upgrades compose cleanly.
-
   In the current shape, neither upgrade is needed: enterprise text
   exports tend to be < 100 MB per file and the sample run finishes
   in under two seconds. Both knobs would be additive — no schema
   changes to manifest / reports / sanitized output.
 - **Phone regex is conservative.** It covers `+CC-XXX-XXX-XXXX`,
-  `(XXX) XXX-XXXX`, `XXX-XXX-XXXX`, and `XXX.XXX.XXXX`. Exotic
-  international formats may slip through. A real ingest would use
-  libphonenumber.
+`(XXX) XXX-XXXX`, `XXX-XXX-XXXX`, and `XXX.XXX.XXXX`. Exotic
+international formats may slip through. A real ingest would use
+libphonenumber.
 - **No `--strict` flag yet** — failure isolation is hard-wired. Adding
-  a "fail the run on first malformed file" mode would be a one-liner
-  if the use case appears.
+a "fail the run on first malformed file" mode would be a one-liner
+if the use case appears.
 
 ## Production hardening
 
-| area                  | upgrade                                                                                                                             |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| **pseudonyms**        | HMAC-SHA256 with a managed salt; rotate keys on a schedule                                                                          |
-| **token vault**       | separately permissioned store mapping pseudonyms back to originals; the sanitization pipeline only ever holds the forward mapping   |
-| **entity resolution** | ML-driven NER + coreference; resolve "she", "the team", first-name-only mentions to canonical entities before pseudonymizing        |
-| **modalities**        | PDF/OCR for contracts, spreadsheet support, audio/video transcripts, embedded references inside Office docs                         |
-| **DQ + schema**       | per-source validators (Slack vs Jira vs email exports each have different invariants); contract tests as part of the pipeline       |
+
+| area                  | upgrade                                                                                                                                |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **pseudonyms**        | HMAC-SHA256 with a managed salt; rotate keys on a schedule                                                                             |
+| **token vault**       | separately permissioned store mapping pseudonyms back to originals; the sanitization pipeline only ever holds the forward mapping      |
+| **entity resolution** | ML-driven NER + coreference; resolve "she", "the team", first-name-only mentions to canonical entities before pseudonymizing           |
+| **modalities**        | PDF/OCR for contracts, spreadsheet support, audio/video transcripts, embedded references inside Office docs                            |
+| **DQ + schema**       | per-source validators (Slack vs Jira vs email exports each have different invariants); contract tests as part of the pipeline          |
 | **PII routing**       | `pii_transformations.csv` and `pii_quarantine.csv` written to a separately permissioned location; failed-file routing + on-call paging |
-| **observability**     | structured logs + metrics for latency, throughput, redaction density, validation findings; lineage IDs propagated through artifacts |
-| **runtime**           | concurrent per-file processing with bounded worker pool; streaming readers for files larger than RAM                                |
-| **security**          | encryption at rest for all artifacts, scoped IAM for output buckets, audit logs for every read                                      |
+| **observability**     | structured logs + metrics for latency, throughput, redaction density, validation findings; lineage IDs propagated through artifacts    |
+| **runtime**           | concurrent per-file processing with bounded worker pool; streaming readers for files larger than RAM                                   |
+| **security**          | encryption at rest for all artifacts, scoped IAM for output buckets, audit logs for every read                                         |
+
 
 ## Repository layout
 
@@ -1119,14 +1117,14 @@ You should see `43 passed` in roughly 1 second. The suite covers:
 
 - the nine baseline scenarios from the original spec,
 - boundary cases (ISO dates not matching the phone regex, aliases not
-  matching inside other words, idempotency on already-sanitized text,
-  phone-shaped substring inside an email),
+matching inside other words, idempotency on already-sanitized text,
+phone-shaped substring inside an email),
 - the config schema's invariants (conflict detection across persons,
-  missing-field validation, idempotent duplicates),
+missing-field validation, idempotent duplicates),
 - both PII row-level reports (location accuracy per processor, snippet
-  privacy, schema sharing between transformations and quarantine,
-  summary-vs-row totals consistency, no empty files on clean runs,
-  CSV format / RFC-4180 round-trips), and
+privacy, schema sharing between transformations and quarantine,
+summary-vs-row totals consistency, no empty files on clean runs,
+CSV format / RFC-4180 round-trips), and
 - the four validation checks under both clean and tampered conditions.
 
 Tests are parameterized where the same logic applies across PII kinds.
@@ -1144,73 +1142,185 @@ python -m pytest tests/test_validation.py -k "leaked_email" -v
 
 ## Engineering notes
 
-A short walk-through of the judgment calls behind the implementation,
-since "the journey" is part of what this is meant to demonstrate.
+A walk-through of the judgment calls behind the implementation. The
+journey is part of what this is meant to demonstrate, so this
+section runs longer than a typical README appendix.
 
-**What this implementation focuses on.** The brief and the role
-description both pointed at the same thing: the boring-but-critical
-pipeline machinery around the transformation. The transformation itself
-is deliberately small (regex + config) so the bulk of the design effort
-goes into the parts a reviewer cares about most when ingesting
-sensitive data: failure isolation, deterministic traversal,
-manifesting, validation, reproducibility, and per-occurrence audit
-trails.
+### Connection to Sunset's operating model
 
-**What this implementation does not include.** Anything that needs real
-infrastructure to be honest: HMAC-keyed pseudonyms with a managed salt,
-a token vault, ML-driven NER + coreference, PDF/OCR + spreadsheets,
-schema-aware DQ, IAM-scoped artifact routing. These all belong in a
-production hardening pass and are listed in
-[Production hardening](#production-hardening).
+The brief and Sunset's operating model converge on the same problem:
+take messy enterprise exports and turn them into cleaner,
+anonymized, normalized data that can feed AI training workflows and
+other downstream applications. A pipeline serious about that has to
+be trustworthy on three axes simultaneously:
 
-**Tradeoffs worth calling out.**
+- robust handling of mixed, malformed, and unsupported inputs
+(failure isolation, deterministic edge-case behavior);
+- deterministic de-identification that preserves the relationships
+downstream consumers care about;
+- observability deep enough that a reviewer can audit a run without
+re-reading every output file.
 
-- *Stdlib only.* No `regex` for Unicode word boundaries, no `pydantic`
-  for config validation, no `rich` for the CLI. Trade: slightly less
-  ergonomic code in places, but zero install friction and a much
-  smaller surface area to audit.
-- *Placeholder + quarantine over hash-based pseudonyms for unmapped
-  values.* This was an explicit design call: hash-based pseudonyms
-  silently make the sanitized output *look* finished even when an
-  operator hasn't reviewed the value. Routing to `pii_quarantine.csv`
-  forces an explicit triage loop instead.
-- *Three-phase apply().* Scanning before replacing costs a second pass
-  over the text, but the alternative (capturing offsets during
-  cascading replacement) means line numbers in reports refer to a
-  state of the string the input file never had. The cost of the
-  second pass is worth the report honesty.
-- *Conservative phone regex.* Skips ISO timestamps and similar digit
-  runs at the cost of missing exotic international formats. A real
-  ingest would use libphonenumber; the regex is good enough for the
-  text-like sources this pipeline targets.
-- *Empty file → `empty` status with a 0-byte mirrored output.* Simple
-  and honest, but downstream consumers have to expect 0-byte files in
-  the tree. The alternative (skipping or emitting a placeholder)
-  would be a separate config knob.
+Latency was identified early as a non-constraint - these are batch
+ingestion workflows, not request-path. That's not a limitation, it's
+an opportunity: it makes room to do thorough sanitization and
+quality-control passes in the same run, rather than splitting them
+into follow-up jobs that duplicate work or drift out of sync.
 
-**Where AI helped, and what got verified or rejected.**
+Within that scope, the design decision was to keep the actual
+transformation small (regex + config-driven mapping) and put the
+design weight into the pipeline behavior around it. The
+transformation isn't where the interesting problems live at this
+scale; the four areas that turn a "script that processes files"
+into something a reviewer can trust are.
 
-- AI helped scaffold the module split, write the first cut of the
-  regex patterns, and draft the recursive JSON walker.
-- The replacement-order logic was verified by hand (especially the
-  email-before-org case for `sarah@betahealth.io`) and locked in with
-  an explicit test before being trusted.
-- An early version of the phone regex was rejected because it was
-  matching parts of ISO timestamps; the current version uses
-  `(?<!\w)` / `(?!\w)` lookarounds and has an explicit ISO-date
-  negative test.
-- `\b` was rejected for alias boundaries after noticing it doesn't
-  work for `Acme Inc.` (alias ending in a non-word char); switched to
-  lookarounds with an explicit test.
-- The "scan once against original text, snippet from sanitized text"
-  three-phase pattern came from an iteration that initially had
-  scan/replace fused — caught when a phone finding's reported line
-  number was off by one because the email replacement above it had
-  shortened the string.
-- Tests were added beyond the bare spec (idempotency on
-  already-sanitized text, ISO-date negative test, alias-inside-other-
-  words negative test, phone-inside-email overlap test) because they
-  would have been the first things to bite a real ingest.
+### The entity config as the backbone
 
-**Next steps if this were going to production.** See the
-[Production hardening](#production-hardening) table.
+The transformation looks small, but the entity config is the
+structurally interesting piece. The current schema is person-centric:
+every fact about an entity (aliases, emails, phones) lives under
+that entity, so the relationship between `Sarah Chen`,
+`sarah@betahealth.io`, and `+1-212-555-0199` is explicit in the file
+rather than inferred from co-occurrence. That's the shape an
+entity-resolution layer would need anyway - a future ML/NLP-driven
+implementation can read the same file, augmented with whatever
+linkage and coreference outputs it produces.
+
+In a production version, the structure, linkage, and consistency of
+entity parameters would itself become a much larger design
+consideration: cross-source coreference, canonicalization rules,
+vault-backed pseudonyms, entity lifecycle (when does an entity stop
+being an entity?), conflict resolution between sources. Keeping the
+schema simple here doesn't preclude any of that; it's a foundation
+those layers can land on.
+
+### Observability: surgical, not just summary-level
+
+The brief asked for a run summary plus a per-file manifest. That's
+the floor - enough so a reviewer doesn't have to open every output
+file to know whether the run succeeded. Two further layers got
+added on top of that floor, each addressing a different question
+the floor doesn't answer:
+
+- **Independent post-run validation.** The reviewer shouldn't have
+to *trust* that the pipeline did what it claimed in the manifest.
+`validation_report.json` runs four integrity checks against the
+sanitized tree and the input tree independently - a separate
+module so a reader can audit the checks themselves in 60 seconds.
+- **Row-level transformation + quarantine audit.** A run summary
+tells you *what happened*; row-level CSVs tell you *exactly where*.
+`pii_transformations.csv` lets a reviewer answer "where exactly
+did the `Sarah Chen` swap to `PERSON_002` happen?" with a precise
+file + line/row/JSON-path location and a sanitized snippet.
+`pii_quarantine.csv` answers the inverse: "show me every place
+the pipeline couldn't confidently classify a value, and tell me
+why." Both share an 8-column flat schema, with `status` as the
+only field that distinguishes them.
+
+Quarantine specifically reflects an explicit design philosophy: when
+the pipeline can't confidently handle a match, it shouldn't silently
+auto-pseudonymize and pretend it did. It should route the value
+into a structured backlog where the unreviewed state is visible,
+with enough context (file, location, masked snippet) for an
+operator to act on it. The triage loop is concrete and tight: open
+`pii_quarantine.csv`, sort by `value_hash` (groups recurrences of
+the same value across documents), add the value to
+`config/entities.json`, re-run; the finding migrates from
+quarantine to transformations on the next pass with a real token,
+across every file the value appears in.
+
+### Why the de-identification engine is intentionally simple
+
+A more sophisticated transformation - NER, coreference, embeddings -
+would change the *core* of the system rather than its periphery.
+Tradeoffs around accuracy, recall, latency, and validation become
+first-order concerns the moment ML enters the picture, and the
+hardest parts of that work are the operator and evaluation
+framework around the model, not the model itself. That deserves a
+dedicated iteration with real data, not a side-task in a 4-hour
+build.
+
+Even within the simple regex + config shape, several judgment calls
+earn their keep, and most of them came out of catching a concrete
+bug rather than guessing at edge cases up front:
+
+- **Replacement order is hard-coded.** Other orders corrupt at
+least one input we care about (e.g. orgs-before-emails would turn
+`sarah@betahealth.io` into `sarah@ORG_001.io`). Worked examples
+in [How de-identification works](#how-de-identification-works).
+- **Lookaround alias boundaries instead of `\b`.** `\b` is undefined
+at non-word boundaries; `Acme Inc.` (alias ending in `.`) is the
+canonical case that breaks it.
+- **Three-phase `apply()`** (scan, replace, snippet) fixes a real
+bug discovered while iterating. A fused implementation reported a
+phone "at line 9" that was actually on line 10, because the email
+replacement above it had shortened the prior text by 18
+characters. The same split also fixes a privacy bug where one
+finding's snippet leaked another's raw value; both go away when
+snippets are rendered against the *fully* sanitized text.
+- **Anonymizer mappings are plain canonical IDs**, not HMAC-keyed
+pseudonyms. In production they would be deterministic but keyed
+with a managed salt - stable across files but resistant to
+reverse-engineering by anyone with source access. The swap is a
+one-line code change; the missing piece is the key management
+around it. See [Production hardening](#production-hardening).
+
+### Working with AI tools: the guardrails themselves need guardrails
+
+AI assistance was used substantially throughout: scaffolding the
+module split, drafting first-cut regex patterns, drafting the
+recursive JSON walker, drafting README sections, drafting commit
+messages. Nothing shipped from a draft without review.
+
+What got verified by hand and locked in with explicit tests:
+
+- The replacement-order logic, especially the email-before-org case
+for `sarah@betahealth.io` - would otherwise silently corrupt the
+domain.
+- The `\b` to lookaround switch after noticing `\b` doesn't work for
+`Acme Inc.`.
+- The phone regex tightening so it skips ISO timestamps like
+`2026-05-01T10:05:00Z` instead of treating them as phones.
+- The off-by-one line-number bug that motivated three-phase
+`apply()`.
+
+Beyond verifying individual behaviors, a more general pattern earned
+its own attention: **as functionality grows fast, AI assistants can
+drift past existing test logic.** New features reliably come with
+new tests, but it's easy for changes that *should* update existing
+expectations to slip through unchanged - the suite stays green
+without actually covering the new behavior. So part of the
+workflow became actively asking "what isn't this test covering?"
+and "is the test suite growing where it should be?", not just
+"are the tests green?".
+
+The broader takeaway, made concrete by this build: **guardrails in
+AI-supported workflows have to themselves be monitored**. Defining
+test coverage, code-review patterns, and validation contracts is a
+starting point; making sure the system keeps following them as new
+functionality lands is the harder, ongoing work. That same
+principle applies to the data pipelines this team builds - both
+are systems where a constraint defined once and left alone slowly
+stops being a constraint, especially when AI is doing more of the
+mechanical work. Building the validation report and the row-level
+PII reports into *this* pipeline was, in a small way, the same
+shape of move: making the contract observable instead of trusting
+it would hold.
+
+### What was deliberately not built
+
+Listed for completeness; concrete upgrade paths and rationale in
+[Production hardening](#production-hardening):
+
+- HMAC-keyed pseudonyms with a managed salt + key rotation
+- Separately permissioned token vault (forward / reverse mapping split)
+- ML/NLP-driven NER + coreference for "she", "the team",
+first-name-only mentions
+- PDF / image / spreadsheet processors
+- Per-source schema validators (Slack, Jira, and email exports each
+have different invariants worth contract-testing)
+- IAM-scoped routing for the PII reports + on-call paging on
+failure / high quarantine volume
+- Concurrent / streaming runtime for very many small files or files
+larger than RAM
+
