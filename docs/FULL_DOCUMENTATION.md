@@ -1372,6 +1372,133 @@ if the use case appears.
 | **security**          | encryption at rest for all artifacts, scoped IAM for output buckets, audit logs for every read                                         |
 
 
+### Pseudonyms in detail: from plain SHA to keyed HMAC
+
+The first row of that table is short, but it's the row most worth
+unpacking, because it changes what a leaked report can be used for.
+
+#### What's in the code today
+
+The current `value_hash` column in both PII CSVs and the dashboard's
+quarantine payload is computed as:
+
+```python
+value_hash = hashlib.sha256(value.encode("utf-8")).hexdigest()[:8]
+```
+
+That gives stable cross-document grouping — the same vendor email
+produces the same 8-char hash everywhere — which is exactly the
+property the operator workflow needs. But it's a *pure* function:
+given the input, anyone can compute the output. There's no key, no
+salt, no secret.
+
+#### Why that's a problem under threat
+
+Imagine an attacker gets read access to `pii_quarantine.csv` (or the
+analytics dashboard's embedded payload, which carries the same
+`value_hash` field). The `value` column is already raw, but suppose
+that column was redacted before the report was shared, leaving only
+hashes. The attacker can still ask:
+
+> Is `evil-target@example.com` in this report?
+
+They precompute `sha256("evil-target@example.com")[:8]` themselves
+and grep for the result. If it's there, they've confirmed the value
+was processed by the pipeline — without ever seeing the raw column.
+That's a *dictionary attack* (or *membership attack*).
+
+It's especially dangerous for emails and phone numbers because the
+search space is small and guessable. There are only ~10¹¹ possible
+US phone numbers, and a target's likely email follows naming
+conventions of their employer's domain. An attacker doesn't need
+collisions — they just need to confirm one specific value's presence.
+
+#### What HMAC changes
+
+Switching `sha256(value)[:8]` to:
+
+```python
+import hmac
+value_hash = hmac.new(secret_key, value.encode("utf-8"), "sha256").hexdigest()[:8]
+```
+
+makes the hash a *keyed* function. Anyone with the same key can
+re-derive a value's hash for grouping or look-up; nobody without the
+key can. The same vendor email still produces the same 8-char hash
+across documents (so the operator's triage workflow keeps working),
+but an outside attacker can no longer pre-compute it.
+
+Concretely:
+
+| property                                | plain SHA  | HMAC-SHA256 |
+| --------------------------------------- | ---------- | ----------- |
+| Same value → same hash within a run     | yes        | yes         |
+| Same value → same hash across runs      | yes        | yes (same key) |
+| Operator can group by `value_hash`      | yes        | yes         |
+| Outsider can confirm "is X in this report?" | yes (any value) | no (key needed) |
+
+#### Where the key lives
+
+The secret must not live in source control, environment files, or
+the artifact directory. In production it lives in a managed
+secret store and is loaded once at pipeline startup:
+
+- AWS KMS (with the pipeline running under an IAM role authorized
+  to `Decrypt` the key)
+- HashiCorp Vault (transit secrets engine — Vault holds the key and
+  exposes a `hmac` endpoint, so the key never leaves the vault)
+- GCP Secret Manager / Azure Key Vault — equivalent shapes
+
+The pipeline's threat model is then "anyone who can read the PII
+report cannot also reach the key" — which is enforced by IAM, not by
+code.
+
+#### Why rotation matters
+
+A static key has a slow leak: every PII report ever produced under
+that key uses the same hashes, so a leak years from now is still
+useful to an attacker who learns a target's email today.
+
+Rotation breaks that. With keys rotated on a schedule (say, every
+90 days):
+
+- Reports produced before the rotation use the old key.
+- Reports produced after use the new key.
+- The same email value gets a *different* `value_hash` in each
+  rotation window — so an attacker who learns one window's hash for
+  a value can't cross-reference it against other windows.
+
+The cost is paid by the operator: cross-document grouping only
+works *within* a rotation window. To support triage that spans
+windows, the pipeline writes the key version into each artifact:
+
+```json
+{
+  "run_id": "20260508_023409",
+  "value_hash_key_version": "k_2026Q2",
+  ...
+}
+```
+
+so reports can be matched to the key that signed them, and an
+operator triaging across rotations knows when grouping breaks.
+
+#### What stays the same
+
+This is a swap-the-hash-call change in the pipeline. It does not
+change:
+
+- The PII CSV schema (the `value_hash` column is still 8 hex chars).
+- The dashboard's grouping logic (still groups by `value_hash`).
+- The validation contract (raw values still don't appear in
+  sanitized outputs; the keyed hash is still in the same column).
+- Determinism (HMAC is deterministic given the same key and input).
+
+The only meaningful operational change is the new dependency on a
+managed secret store, plus a `value_hash_key_version` field in
+artifact metadata so reports stay interpretable across rotations.
+
+
 ## Repository layout
 
 ```
