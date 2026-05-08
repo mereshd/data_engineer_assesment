@@ -71,6 +71,7 @@ class DemoRun:
     manifest: list[dict]
     transformations: list[dict]
     quarantine: list[dict]
+    analytics_html: str
 
 
 def _read_jsonl(path: Path) -> list[dict]:
@@ -105,6 +106,7 @@ def demo_run(tmp_path_factory: pytest.TempPathFactory) -> DemoRun:
         output_root=output_root,
         config_path=PROJECT_ROOT / "config" / "entities.json",
     )
+    analytics_path = output_root / "reports" / "analytics.html"
     return DemoRun(
         result=result,
         output_root=output_root,
@@ -114,6 +116,10 @@ def demo_run(tmp_path_factory: pytest.TempPathFactory) -> DemoRun:
         ),
         quarantine=_read_csv(
             output_root / "reports" / "pii_quarantine.csv"
+        ),
+        analytics_html=(
+            analytics_path.read_text(encoding="utf-8")
+            if analytics_path.exists() else ""
         ),
     )
 

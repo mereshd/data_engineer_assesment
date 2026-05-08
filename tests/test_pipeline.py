@@ -354,6 +354,94 @@ def test_pii_csvs_have_stable_format_and_round_trip_cleanly(demo_run) -> None:
     assert any('"' in r["location"] for r in all_records)
 
 
+# --------------------------------------------- analytics dashboard
+
+
+def test_analytics_html_is_written(demo_run) -> None:
+    """Every run produces a self-contained analytics.html, alongside
+    the other reports. RunResult.analytics_path points at it; the
+    file lives under <output>/reports/."""
+    expected = demo_run.output_root / "reports" / "analytics.html"
+    assert expected.is_file()
+    assert demo_run.result.analytics_path == expected
+    assert len(demo_run.analytics_html) > 0
+
+
+def test_analytics_html_embeds_run_summary_and_graph_data(demo_run) -> None:
+    """Pull the JSON payload back out of the embedded
+    <script type="application/json"> block and verify it carries the
+    summary, graph nodes/edges, and quarantine groupings we expect."""
+    import json
+    import re
+
+    match = re.search(
+        r'<script type="application/json" id="dashboard-data">\s*(.+?)\s*</script>',
+        demo_run.analytics_html,
+        re.DOTALL,
+    )
+    assert match, "embedded dashboard-data block not found"
+
+    # The Python side replaces "<" with "\u003c" inside the JSON to
+    # prevent any string in the data from breaking the surrounding
+    # HTML; JSON.parse handles that natively, and so does json.loads.
+    data = json.loads(match.group(1))
+
+    # Summary embeds the run id and totals.
+    assert data["summary"]["run_id"] == demo_run.result.run_id
+    assert data["summary"]["files_processed"] == 5
+    assert data["summary"]["unmapped"] == {"emails": 2, "phones": 2}
+
+    # Graph has one node per processed file plus one per distinct
+    # canonical entity, and at least one edge.
+    node_groups = {n["group"] for n in data["graph"]["nodes"]}
+    assert "file" in node_groups
+    assert {"person", "organization", "email", "phone"} <= node_groups
+    assert len(data["graph"]["edges"]) > 0
+
+    # Quarantine grouped by (kind, value, hash) - the seeded vendor
+    # email + phone each have 2 occurrences (markdown + CSV).
+    by_value = {q["value"]: q for q in data["quarantine"]}
+    assert "vendor.support@externalpartner.com" in by_value
+    assert by_value["vendor.support@externalpartner.com"]["count"] == 2
+
+
+def test_analytics_html_does_not_leak_raw_pii_via_neighboring_snippets(
+    demo_run,
+) -> None:
+    """Snippets in the embedded payload come from the fully sanitized
+    text, so the same privacy contract that holds for the CSV
+    snippets holds here."""
+    import json
+    import re
+
+    match = re.search(
+        r'<script type="application/json" id="dashboard-data">\s*(.+?)\s*</script>',
+        demo_run.analytics_html,
+        re.DOTALL,
+    )
+    data = json.loads(match.group(1))
+
+    for q in data["quarantine"]:
+        for occ in q["occurrences"]:
+            # The raw value should never appear verbatim in its own snippet.
+            assert q["value"] not in occ["snippet"], (q["value"], occ)
+
+
+def test_analytics_html_links_back_to_other_reports(demo_run) -> None:
+    """The header links to the machine-readable artifacts so a reviewer
+    can pivot from the dashboard to the underlying data."""
+    for filename in (
+        "run_summary.json",
+        "file_manifest.jsonl",
+        "validation_report.json",
+        "pii_transformations.csv",
+        "pii_quarantine.csv",
+    ):
+        assert (
+            f'href="{filename}"' in demo_run.analytics_html
+        ), filename
+
+
 # --------------------------------------------- bespoke-input scenarios
 
 

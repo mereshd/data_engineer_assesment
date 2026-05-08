@@ -118,6 +118,7 @@ def main(argv: list[str] | None = None) -> int:
             f"({len(result.pii_quarantine)} record"
             f"{'s' if len(result.pii_quarantine) != 1 else ''})"
         )
+    print(f"  analytics:           {result.analytics_path}")
 
     if result.run_status != "completed" or not result.validation.get("passed"):
         return 2

@@ -9,7 +9,7 @@ The pipeline:
      ``try/except`` so a single bad file never aborts the run.
   4. Writes sanitized outputs into ``<output_root>/sanitized/`` mirroring
      the input layout.
-  5. Emits five artifacts under ``<output_root>/reports/``:
+  5. Emits six artifacts under ``<output_root>/reports/``:
         - ``run_summary.json``        - top-level run telemetry
         - ``file_manifest.jsonl``     - one row per input file
         - ``validation_report.json``  - four post-run integrity checks
@@ -17,12 +17,18 @@ The pipeline:
                                         (configured value -> known token)
         - ``pii_quarantine.csv``      - one row per *unmapped* PII match
                                         (regex hit, no config entry yet)
+        - ``analytics.html``          - single-page interactive dashboard:
+                                        run-stats strip, entity <-> file
+                                        network graph, and grouped
+                                        quarantine triage panel
 
 The two PII reports share a flat 8-column schema, so they're emitted as
 CSV (operator-friendly: opens in Excel / BI tools / pandas without parsing
 JSON). They're separated by file so an operator can hand the quarantine
 file to the on-call triage queue without also exposing the (much larger)
-full transformation log.
+full transformation log. The analytics dashboard is the visual layer
+on top of all of those - the same data, but rendered as a graph + tiles
+that a reviewer can open in a browser.
 """
 
 from __future__ import annotations
@@ -33,6 +39,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import validation
+from .analytics import write_analytics_html
 from .deid import STATUS_MAPPED, STATUS_UNMAPPED, DeIdentifier
 from .processors import (
     FindingRecord,
@@ -75,6 +82,7 @@ REPORTS_SUBDIR = "reports"
 
 PII_TRANSFORMATIONS_FILENAME = "pii_transformations.csv"
 PII_QUARANTINE_FILENAME = "pii_quarantine.csv"
+ANALYTICS_FILENAME = "analytics.html"
 
 # Fixed column order for both PII CSVs; "file" first so a plain `sort` /
 # `uniq -f1` style triage workflow groups records by source file naturally.
@@ -101,6 +109,7 @@ class RunResult:
     validation_path: Path
     pii_transformations_path: Path | None
     pii_quarantine_path: Path | None
+    analytics_path: Path
     summary: dict[str, Any]
     manifest: list[dict[str, Any]]
     validation: dict[str, Any]
@@ -226,6 +235,20 @@ def run(
     write_jsonl(manifest_path, manifest)
     write_json(validation_path, validation_report)
 
+    # The analytics dashboard is the visual layer over everything else
+    # we just wrote. Build it last so it can reference all of those
+    # artifacts (and so any rendering error doesn't block the
+    # machine-readable reports above from getting on disk).
+    analytics_path = reports_root / ANALYTICS_FILENAME
+    write_analytics_html(
+        output_path=analytics_path,
+        summary=summary,
+        manifest=manifest,
+        transformations=pii_transformations,
+        quarantine=pii_quarantine,
+    )
+    LOG.info("Analytics dashboard written: %s", analytics_path)
+
     return RunResult(
         run_id=run_id,
         run_status=run_status,
@@ -234,6 +257,7 @@ def run(
         validation_path=validation_path,
         pii_transformations_path=pii_transformations_path,
         pii_quarantine_path=pii_quarantine_path,
+        analytics_path=analytics_path,
         summary=summary,
         manifest=manifest,
         validation=validation_report,
